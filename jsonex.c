@@ -4,12 +4,13 @@
 #include <math.h>
 #include <stddef.h>
 
-#define STACK_FRAME_COUNT 16
+#define CONTEXT_FRAME_COUNT 16
+#define MAX_STRING_SIZE 64
 
-struct stack;
+struct context;
 struct frame;
 
-typedef int (*parse_fn_t)(struct stack *, struct frame *, char);
+typedef int (*parse_fn_t)(struct context *, struct frame *, char);
 
 typedef struct frame {
     enum {
@@ -29,69 +30,97 @@ typedef struct frame {
             int decimal_digits;
             double decimal_part;
         } number;
-        struct {
-            char string[64];
-            size_t len;
-        } string;
+        char string[MAX_STRING_SIZE];
     } u;
     parse_fn_t fn;
     int is_complete;
 } frame_t;
 
-typedef struct stack {
-    frame_t frames[STACK_FRAME_COUNT];
-    size_t len;
-    const char *error;
-} stack_t;
+typedef struct {
+    enum {
+        JSONEX_INTEGER,
+        JSONEX_END
+    } type;
+    void *p;
+    char **path;
+    int found;
+} jsonex_rule_t;
 
-int reap(stack_t *stack) {
+typedef struct context {
+    frame_t frames[CONTEXT_FRAME_COUNT];
+    size_t frames_len;
+    char paths[CONTEXT_FRAME_COUNT][MAX_STRING_SIZE];
+    size_t paths_len;
+    jsonex_rule_t *rules;
+    const char *error;
+} context_t;
+
+int reap(context_t *context) {
     puts(".. reap()");
-    if (stack->len == STACK_FRAME_COUNT) {
-        stack->error = "stack full in reap()";
+    if (context->frames_len == CONTEXT_FRAME_COUNT) {
+        context->error = "context full in reap()";
+        return 0;
+    }
+    frame_t *frame = &(context->frames[context->frames_len]);
+    if (frame->status != ZOMBIE) {
+        context->error = "frame isn't a zombie";
         return 0;
     } else {
-        return stack->frames[stack->len].is_complete;
+        frame->status = FREE;
+        return frame->is_complete;
     }
 }
 
-void close(stack_t *stack) {
+void close(context_t *context) {
     puts(".. close()");
-    if (stack->len == 0) {
-        stack->error = "stack empty in close()"; // todo report error somehow. also init to NULL. also don't clobber
+    if (context->frames_len == 0) {
+        context->error = "context empty in close()"; // todo report error somehow. also init to NULL. also don't clobber
     } else {
-        frame_t *frame = &(stack->frames[stack->len - 1]);
-        frame->status = ZOMBIE;
-        frame->is_complete = 1;
-        stack->len--;
+        frame_t *frame = &(context->frames[context->frames_len - 1]);
+        if (frame->status != IN_USE) {
+            context->error = "frame isn't in use";
+        } else {
+            frame->status = ZOMBIE;
+            frame->is_complete = 1;
+            context->frames_len--;
+        }
     }
 }
 
-void fail(stack_t *stack) {
+void fail(context_t *context) {
     puts(".. fail()");
-    if (stack->len == 0) {
-        stack->error = "stack empty in fail()";
+    if (context->frames_len == 0) {
+        context->error = "context empty in fail()";
     } else {
-        frame_t *frame = &(stack->frames[stack->len - 1]);
-        frame->status = ZOMBIE;
-        frame->is_complete = 0;
-        stack->len--;
+        frame_t *frame = &(context->frames[context->frames_len - 1]);
+        if (frame->status != IN_USE) {
+            context->error = "frame isn't in use";
+        } else {
+            frame->status = ZOMBIE;
+            frame->is_complete = 0;
+            context->frames_len--;
+        }
     }
 }
 
-void replace(stack_t *stack, parse_fn_t fn) {
+void replace(context_t *context, parse_fn_t fn) {
     puts(".. replace()");
-    stack->frames[stack->len - 1].fn = fn;
+    context->frames[context->frames_len - 1].fn = fn;
 }
 
-void call(stack_t *stack, parse_fn_t fn) {
+void call(context_t *context, parse_fn_t fn) {
     puts(".. call()");
-    if (stack->len == STACK_FRAME_COUNT) {
-        stack->error = "stack full in call()";
+    if (context->frames_len == CONTEXT_FRAME_COUNT) {
+        context->error = "context full in call()";
     } else {
-        frame_t *frame = &(stack->frames[stack->len]);
-        frame->status = IN_USE;
-        frame->fn = fn;
-        stack->len++;
+        frame_t *frame = &(context->frames[context->frames_len]);
+        if (frame->status == FREE) {
+            frame->status = IN_USE;
+            frame->fn = fn;
+            context->frames_len++;
+        } else {
+            context->error = "frame isn't free";
+        }
     }
 }
 
@@ -106,227 +135,241 @@ int is_ws(char c) {
     return 0;
 }
 
-int _literal_null(stack_t *stack, frame_t *frame, char c) {
+int _literal_null(context_t *context, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
-            close(stack);
+            close(context);
         }
         return 1;
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int _null(stack_t *stack, frame_t *frame, char c) {
+int _null(context_t *context, frame_t *frame, char c) {
     frame->u.literal.string = "null";
     frame->u.literal.len = 4;
     frame->u.literal.offset = 0;
 
-    replace(stack, _literal_null);
+    replace(context, _literal_null);
     return 0;
 }
 
-int value_maybe_null(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_null(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_null");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        fail(stack);
+        fail(context);
         return 0;
     }
 }
 
-int _literal_false(stack_t *stack, frame_t *frame, char c) {
+int _literal_false(context_t *context, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
-            close(stack);
+            close(context);
         }
         return 1;
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int _false(stack_t *stack, frame_t *frame, char c) {
+int _false(context_t *context, frame_t *frame, char c) {
     frame->u.literal.string = "false";
     frame->u.literal.len = 5;
     frame->u.literal.offset = 0;
 
-    replace(stack, _literal_false);
+    replace(context, _literal_false);
     return 0;
 }
 
-int value_maybe_false(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_false(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_false");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        replace(stack, value_maybe_null);
-        call(stack, _null);
+        replace(context, value_maybe_null);
+        call(context, _null);
         return 0;
     }
 }
 
-int _literal_true(stack_t *stack, frame_t *frame, char c) {
+int _literal_true(context_t *context, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
-            close(stack);
+            close(context);
         }
         return 1;
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int _true(stack_t *stack, frame_t *frame, char c) {
+int _true(context_t *context, frame_t *frame, char c) {
     frame->u.literal.string = "true";
     frame->u.literal.len = 4;
     frame->u.literal.offset = 0;
 
-    replace(stack, _literal_true);
+    replace(context, _literal_true);
     return 0;
 }
 
-int value_maybe_true(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_true(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_true");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        replace(stack, value_maybe_false);
-        call(stack, _false);
+        replace(context, value_maybe_false);
+        call(context, _false);
         return 0;
     }
 }
 
-int value(stack_t *, frame_t *, char);
+int value(context_t *, frame_t *, char);
 
-int array_item(stack_t *stack, frame_t *frame, char c) {
+int array_item(context_t *context, frame_t *frame, char c) {
     puts("array_item");
 
     if (is_ws(c)) {
         return 1;
     }
 
-    if (reap(stack)) {
+    if (reap(context)) {
         if (c == ',') {
-            call(stack, value);
+            call(context, value);
             return 1;
         } else if (c == ']') {
-            close(stack);
+            close(context);
             return 1;
         }
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int array_maybe_empty(stack_t *stack, frame_t *frame, char c) {
+int array_maybe_empty(context_t *context, frame_t *frame, char c) {
     puts("array_maybe_empty");
 
     if (c == ']') {
         // The empty array.
-        close(stack);
+        close(context);
         return 1;
     } else if (c == '\0') {
-        fail(stack);
+        fail(context);
         return 0;
     } else {
-        replace(stack, array_item);
-        call(stack, value);
+        replace(context, array_item);
+        call(context, value);
         return 0;
     }
 }
 
-int array(stack_t *stack, frame_t *frame, char c) {
+int array(context_t *context, frame_t *frame, char c) {
     puts("array");
 
     if (c == '[') {
-        replace(stack, array_maybe_empty);
+        replace(context, array_maybe_empty);
         return 1;
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int value_maybe_array(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_array(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_array");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        replace(stack, value_maybe_true);
-        call(stack, _true);
+        replace(context, value_maybe_true);
+        call(context, _true);
         return 0;
     }
 }
 
-int object_key(stack_t *, frame_t *, char);
+int object_key(context_t *, frame_t *, char);
 
-int object_value(stack_t *stack, frame_t *frame, char c) {
+int object_value(context_t *context, frame_t *frame, char c) {
     puts("object_value");
 
     if (is_ws(c)) {
         return 1;
     }
 
-    if (reap(stack)) {
+    if (reap(context)) {
+        // Remove last path component.
+        // todo check 0
+        context->paths_len--;
+
         if (c == ',') {
-            replace(stack, object_key);
+            replace(context, object_key);
             return 1;
         } else if (c == '}') {
-            close(stack);
+            close(context);
             return 1;
         }
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
 // todo static
-int object_colon(stack_t *stack, frame_t *frame, char c) {
+int object_colon(context_t *context, frame_t *frame, char c) {
     puts("object_colon");
 
     if (is_ws(c)) {
         return 1;
     }
 
-    if (reap(stack) && c == ':') {
-        replace(stack, object_value);
-        call(stack, value);
+    if (reap(context) && c == ':') {
+        frame_t *frame = &(context->frames[context->frames_len]);
+
+        // Add key to path.
+        strcpy(context->paths[context->paths_len++], frame->u.string);
+        printf("path now:");
+        for (int i = 0; i < context->paths_len; i++) {
+            printf(" %s", context->paths[i]);
+        }
+        puts("");
+
+        replace(context, object_value);
+        call(context, value);
         return 1;
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int string(stack_t *, frame_t *, char);
+int string(context_t *, frame_t *, char);
 
-int object_key(stack_t *stack, frame_t *frame, char c) {
+int object_key(context_t *context, frame_t *frame, char c) {
     puts("object_key");
 
     if (is_ws(c)) {
         return 1;
     }
 
-    replace(stack, object_colon);
-    call(stack, string);
+    replace(context, object_colon);
+    call(context, string);
     return 0;
 }
 
-int object_maybe_empty(stack_t *stack, frame_t *frame, char c) {
+int object_maybe_empty(context_t *context, frame_t *frame, char c) {
     puts("object_maybe_empty");
 
     if (is_ws(c)) {
@@ -335,42 +378,42 @@ int object_maybe_empty(stack_t *stack, frame_t *frame, char c) {
 
     if (c == '}') {
         // The empty object.
-        close(stack);
+        close(context);
         return 1;
     } else if (c == '\0') {
-        fail(stack);
+        fail(context);
         return 0;
     } else {
-        replace(stack, object_key);
+        replace(context, object_key);
         return 0;
     }
 }
 
-int object(stack_t *stack, frame_t *frame, char c) {
+int object(context_t *context, frame_t *frame, char c) {
     puts("object");
 
     if (c == '{') {
-        replace(stack, object_maybe_empty);
+        replace(context, object_maybe_empty);
         return 1;
     }
 
-    fail(stack);
+    fail(context);
     return 0;
 }
 
-int value_maybe_object(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_object(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_object");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        replace(stack, value_maybe_array);
-        call(stack, array);
+        replace(context, value_maybe_array);
+        call(context, array);
         return 0;
     }
 }
 
-int number_decimal_digits(stack_t *stack, frame_t *frame, char c) {
+int number_decimal_digits(context_t *context, frame_t *frame, char c) {
     puts("number_decimal_digits");
 
     if (c >= '0' && c <= '9') {
@@ -380,29 +423,29 @@ int number_decimal_digits(stack_t *stack, frame_t *frame, char c) {
         return 1;
     } else if (frame->u.number.decimal_digits > 0) {
         // As long as we get one digit after ., it's a valid number.
-        close(stack);
+        close(context);
         return 0;
     } else {
-        fail(stack);
+        fail(context);
         return 0;
     }
     // todo: handle e+4
 }
 
-int number_got_integer_part(stack_t *stack, frame_t *frame, char c) {
+int number_got_integer_part(context_t *context, frame_t *frame, char c) {
     puts("number_got_integer_part");
 
     if (c == '.') {
-        replace(stack, number_decimal_digits);
+        replace(context, number_decimal_digits);
         return 1;
     } else {
         // Input can end here, and we still have a number.
-        close(stack);
+        close(context);
         return 0;
     }
 }
 
-int number_got_nonzero_integer_part(stack_t *stack, frame_t *frame, char c) {
+int number_got_nonzero_integer_part(context_t *context, frame_t *frame, char c) {
     puts("number_got_nonzero_integer_part");
 
     if (c >= '0' && c <= '9') {
@@ -413,32 +456,32 @@ int number_got_nonzero_integer_part(stack_t *stack, frame_t *frame, char c) {
     } else if (c == '\0') {
         // We always get a digit first (see number_got_sign), so if we get a \0
         // here that's fine, we still got a number.
-        close(stack);
+        close(context);
         return 0;
     } else {
-        replace(stack, number_got_integer_part);
+        replace(context, number_got_integer_part);
         return 0;
     }
 }
 
-int number_got_sign(stack_t *stack, frame_t *frame, char c) {
+int number_got_sign(context_t *context, frame_t *frame, char c) {
     puts("number_got_sign");
 
     if (c == '0') {
-        replace(stack, number_got_integer_part);
+        replace(context, number_got_integer_part);
         return 1;
     } else if (c >= '1' && c <= '9') {
-        replace(stack, number_got_nonzero_integer_part);
+        replace(context, number_got_nonzero_integer_part);
         return 0;
     } else {
         // Got the sign but no digit, if we get anything but [0-9] at this
         // point (including \0), it's a fail.
-        fail(stack);
+        fail(context);
         return 0;
     }
 }
 
-int number(stack_t *stack, frame_t *frame, char c) {
+int number(context_t *context, frame_t *frame, char c) {
     puts("number");
 
     frame->u.number.negative = 0;
@@ -447,10 +490,10 @@ int number(stack_t *stack, frame_t *frame, char c) {
     frame->u.number.decimal_part = 0;
 
     if (c == '\0') {
-        fail(stack);
+        fail(context);
         return 0;
     } else {
-        replace(stack, number_got_sign);
+        replace(context, number_got_sign);
         if (c == '-') {
             frame->u.number.negative = 1;
             return 1;
@@ -460,98 +503,102 @@ int number(stack_t *stack, frame_t *frame, char c) {
     }
 }
 
-int value_maybe_number(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_number(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_number");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        replace(stack, value_maybe_object);
-        call(stack, object);
+        replace(context, value_maybe_object);
+        call(context, object);
         return 0;
     }
 }
 
-int string_contents(stack_t *stack, frame_t *frame, char c) {
+int string_contents(context_t *context, frame_t *frame, char c) {
     puts("string_contents");
     if (c == '"') {
-        printf("string_contents: got string close, string was %.*s\n", frame->u.string.len, frame->u.string.string);
-        close(stack);
+        // todo check length
+        printf("string_contents: got string close, string was %s\n", frame->u.string);
+        close(context);
         return 1;
     } else if (c == '\0') {
-        fail(stack);
+        fail(context);
         return 0;
     } else {
         // Add to buffer and consume.
         // todo if too long error somehow
-        frame->u.string.string[frame->u.string.len++] = c;
+        frame->u.string[strlen(frame->u.string)] = c;
         return 1;
     }
     // todo handle escaping
 }
 
-int string(stack_t *stack, frame_t *frame, char c) {
+int string(context_t *context, frame_t *frame, char c) {
     puts("string");
 
-    frame->u.string.len = 0;
+    memset(frame->u.string, '\0', sizeof(frame->u.string));
 
     if (c == '"') {
         puts("string: got string open");
-        replace(stack, string_contents);
+        replace(context, string_contents);
         return 1;
     } else if (c == '\0') {
-        fail(stack);
+        fail(context);
         return 0;
     } else {
-        fail(stack);
+        fail(context);
         return 0;
     }
 }
 
-int value_maybe_string(stack_t *stack, frame_t *frame, char c) {
+int value_maybe_string(context_t *context, frame_t *frame, char c) {
     puts("value_maybe_string");
-    if (reap(stack)) {
-        close(stack);
+    if (reap(context)) {
+        close(context);
         return 0;
     } else {
-        replace(stack, value_maybe_number);
-        call(stack, number);
+        replace(context, value_maybe_number);
+        call(context, number);
         return 0;
     }
 }
 
-int value(stack_t *stack, frame_t *frame, char c) {
+int value(context_t *context, frame_t *frame, char c) {
     puts("value");
 
     if (is_ws(c)) {
         return 1;
     }
 
-    replace(stack, value_maybe_string);
-    call(stack, string);
+    replace(context, value_maybe_string);
+    call(context, string);
     return 0;
 }
 
-void jsonex_init(stack_t *stack) {
-    stack->len = 1;
-    stack->frames[0].status = IN_USE;
-    stack->frames[0].fn = value;
-    for (int i = 1; i < STACK_FRAME_COUNT; i++) {
-        stack->frames[i].status = FREE;
+void jsonex_init(context_t *context, jsonex_rule_t *rules) {
+    context->frames[0].status = IN_USE;
+    context->frames[0].fn = value;
+    for (int i = 1; i < CONTEXT_FRAME_COUNT; i++) {
+        context->frames[i].status = FREE;
     }
+    context->frames_len = 1;
+    context->paths_len = 0;
+    context->rules = rules;
+    context->error = NULL;
 }
 
-int jsonex_call(stack_t *stack, char c) {
-    while (stack->len > 0) {
+int jsonex_call(context_t *context, char c) {
+    while (context->frames_len > 0) {
         // A parse_fn_t should return truthy if the character was consumed,
         // falsy otherwise.
-        frame_t *frame = &(stack->frames[stack->len - 1]);
-        size_t old_stack_len = stack->len;
-        if (frame->fn(stack, frame, c)) {
+        frame_t *frame = &(context->frames[context->frames_len - 1]);
+        size_t old_context_len = context->frames_len;
+        if (frame->fn(context, frame, c)) {
             return 1;
         }
         // Keep looping until something consumes this character! (Or there's no
-        // more stack.)
+        // more context.)
     }
 
     // Eat up trailing whitespace.
@@ -565,47 +612,51 @@ int jsonex_call(stack_t *stack, char c) {
 const char *jsonex_success = "success";
 const char *jsonex_fail = "fail";
 
-const char *jsonex_finish(stack_t *stack) {
+const char *jsonex_finish(context_t *context) {
     // All parse functions should complete() or abort() when given '\0', so
-    // each time we call_stack(.., '\0') there should be one less frame.
-    while (stack->len > 0) {
-        size_t old_stack_len = stack->len;
+    // each time we call_context(.., '\0') there should be one less frame.
+    while (context->frames_len > 0) {
+        size_t old_context_len = context->frames_len;
         printf("finishing, c = '\\0'\n");
-        if (jsonex_call(stack, '\0')) {
+        if (jsonex_call(context, '\0')) {
             return "internal error: some parse function consumed '\\0'";
         }
-        if (stack->len >= old_stack_len) {
-            return "internal error: stack->len not decreasing";
+        if (context->frames_len >= old_context_len) {
+            return "internal error: context->frames_len not decreasing";
         }
     }
 
-    // Since init_stack() put something on the stack, and there was nothing
+    // Since init_context() put something on the context, and there was nothing
     // left to reap() it, we ought to have a zombie left over telling us
     // whether the parse succeeded or failed.
-    if (stack->frames[0].status != ZOMBIE) {
+    if (context->frames[0].status != ZOMBIE) {
         return "internal error: first frame isn't a zombie";
     }
-    if (stack->frames[0].is_complete) {
+    if (context->frames[0].is_complete) {
         return jsonex_success;
     }
     return jsonex_fail;
 }
 
 const char *feed(char *s, size_t len) {
-    stack_t stack;
-    jsonex_init(&stack);
+    context_t context;
+    jsonex_rule_t rules[] = {
+        { .type = JSONEX_INTEGER, .p = &value, .path = (char *[]){ "bloop", NULL } },
+        { .type = JSONEX_END }
+    };
+    jsonex_init(&context, rules);
 
     for (int i = 0; i < len; i++) {
         printf("c = %c\n", s[i]);
-        if (!jsonex_call(&stack, s[i])) {
+        if (!jsonex_call(&context, s[i])) {
             return jsonex_fail;
         }
     }
 
-    return jsonex_finish(&stack);
+    return jsonex_finish(&context);
 }
 
 int main(void) {
-    char *json = "  [ 1 , 2 , true , false , null , 4 , { \"blah\" : null } ] ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
+    char *json = " { \"bloop\":42, \"blah\": {\"snarf\": \"thundercat\", \"wharrgbl\":  \"mem dog\"} , \"poop\" : 3 } ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
     puts(feed(json, strlen(json)));
 }
