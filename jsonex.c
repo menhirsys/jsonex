@@ -413,6 +413,30 @@ int value_maybe_object(context_t *context, frame_t *frame, char c) {
     }
 }
 
+void number_complete_match_rule(context_t *context, frame_t *frame) {
+    // If this path matches a rule, store the value.
+    for (jsonex_rule_t *p = context->rules; p->type != JSONEX_END; p++) {
+        if (p->type != JSONEX_INTEGER) {
+            continue;
+        }
+        int match = 1;
+        for (int i = 0; i < context->paths_len; i++) {
+            if (p->path[i] == NULL) {
+                match = 0;
+                break;
+            }
+            if (strcmp(p->path[i], context->paths[i])) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            p->found = 1;
+            *((int *)p->p) = frame->u.number.integer_part;
+        }
+    }
+}
+
 int number_decimal_digits(context_t *context, frame_t *frame, char c) {
     puts("number_decimal_digits");
 
@@ -423,6 +447,7 @@ int number_decimal_digits(context_t *context, frame_t *frame, char c) {
         return 1;
     } else if (frame->u.number.decimal_digits > 0) {
         // As long as we get one digit after ., it's a valid number.
+        number_complete_match_rule(context, frame);
         close(context);
         return 0;
     } else {
@@ -440,6 +465,7 @@ int number_got_integer_part(context_t *context, frame_t *frame, char c) {
         return 1;
     } else {
         // Input can end here, and we still have a number.
+        number_complete_match_rule(context, frame);
         close(context);
         return 0;
     }
@@ -456,6 +482,7 @@ int number_got_nonzero_integer_part(context_t *context, frame_t *frame, char c) 
     } else if (c == '\0') {
         // We always get a digit first (see number_got_sign), so if we get a \0
         // here that's fine, we still got a number.
+        number_complete_match_rule(context, frame);
         close(context);
         return 0;
     } else {
@@ -584,6 +611,9 @@ void jsonex_init(context_t *context, jsonex_rule_t *rules) {
     }
     context->frames_len = 1;
     context->paths_len = 0;
+    for (jsonex_rule_t *p = rules; p->type != JSONEX_END; p++) {
+        p->found = 0;
+    }
     context->rules = rules;
     context->error = NULL;
 }
@@ -638,10 +668,16 @@ const char *jsonex_finish(context_t *context) {
     return jsonex_fail;
 }
 
+int bloop_value;
+int blah_snarf_value;
+int poop_value;
+
 const char *feed(char *s, size_t len) {
     context_t context;
     jsonex_rule_t rules[] = {
-        { .type = JSONEX_INTEGER, .p = &value, .path = (char *[]){ "bloop", NULL } },
+        { .type = JSONEX_INTEGER, .p = &bloop_value, .path = (char *[]){ "bloop", NULL } },
+        { .type = JSONEX_INTEGER, .p = &blah_snarf_value, .path = (char *[]){ "blah", "snarf", NULL } },
+        { .type = JSONEX_INTEGER, .p = &poop_value, .path = (char *[]){ "poop", NULL } },
         { .type = JSONEX_END }
     };
     jsonex_init(&context, rules);
@@ -653,10 +689,16 @@ const char *feed(char *s, size_t len) {
         }
     }
 
-    return jsonex_finish(&context);
+    const char *ret = jsonex_finish(&context);
+
+    printf("bloop_value is: %i\n", bloop_value);
+    printf("blah_snarf_value is: %i\n", blah_snarf_value);
+    printf("poop_value is: %i\n", poop_value);
+
+    return ret;
 }
 
 int main(void) {
-    char *json = " { \"bloop\":42, \"blah\": {\"snarf\": \"thundercat\", \"wharrgbl\":  \"mem dog\"} , \"poop\" : 3 } ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
+    char *json = " { \"bloop\":42, \"blah\": {\"snarf\": 1234, \"wharrgbl\":  \"mem dog\"} , \"poop\" : 3 } ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
     puts(feed(json, strlen(json)));
 }
