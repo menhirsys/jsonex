@@ -29,6 +29,10 @@ typedef struct frame {
             int decimal_digits;
             double decimal_part;
         } number;
+        struct {
+            char string[64];
+            size_t len;
+        } string;
     } u;
     parse_fn_t fn;
     int is_complete;
@@ -471,13 +475,16 @@ int value_maybe_number(stack_t *stack, frame_t *frame, char c) {
 int string_contents(stack_t *stack, frame_t *frame, char c) {
     puts("string_contents");
     if (c == '"') {
-        puts("string_contents: got string close");
+        printf("string_contents: got string close, string was %.*s\n", frame->u.string.len, frame->u.string.string);
         close(stack);
         return 1;
     } else if (c == '\0') {
         fail(stack);
         return 0;
     } else {
+        // Add to buffer and consume.
+        // todo if too long error somehow
+        frame->u.string.string[frame->u.string.len++] = c;
         return 1;
     }
     // todo handle escaping
@@ -485,6 +492,9 @@ int string_contents(stack_t *stack, frame_t *frame, char c) {
 
 int string(stack_t *stack, frame_t *frame, char c) {
     puts("string");
+
+    frame->u.string.len = 0;
+
     if (c == '"') {
         puts("string: got string open");
         replace(stack, string_contents);
