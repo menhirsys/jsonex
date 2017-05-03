@@ -91,6 +91,17 @@ void call(stack_t *stack, parse_fn_t fn) {
     }
 }
 
+int is_ws(char c) {
+    switch (c) {
+    case ' ':
+    case '\n':
+    case '\r':
+    case '\t':
+        return 1;
+    }
+    return 0;
+}
+
 int _literal_null(stack_t *stack, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
@@ -197,6 +208,10 @@ int value(stack_t *, frame_t *, char);
 int array_item(stack_t *stack, frame_t *frame, char c) {
     puts("array_item");
 
+    if (is_ws(c)) {
+        return 1;
+    }
+
     if (reap(stack)) {
         if (c == ',') {
             call(stack, value);
@@ -257,6 +272,10 @@ int object_key(stack_t *, frame_t *, char);
 int object_value(stack_t *stack, frame_t *frame, char c) {
     puts("object_value");
 
+    if (is_ws(c)) {
+        return 1;
+    }
+
     if (reap(stack)) {
         if (c == ',') {
             replace(stack, object_key);
@@ -275,6 +294,10 @@ int object_value(stack_t *stack, frame_t *frame, char c) {
 int object_colon(stack_t *stack, frame_t *frame, char c) {
     puts("object_colon");
 
+    if (is_ws(c)) {
+        return 1;
+    }
+
     if (reap(stack) && c == ':') {
         replace(stack, object_value);
         call(stack, value);
@@ -290,6 +313,10 @@ int string(stack_t *, frame_t *, char);
 int object_key(stack_t *stack, frame_t *frame, char c) {
     puts("object_key");
 
+    if (is_ws(c)) {
+        return 1;
+    }
+
     replace(stack, object_colon);
     call(stack, string);
     return 0;
@@ -297,6 +324,10 @@ int object_key(stack_t *stack, frame_t *frame, char c) {
 
 int object_maybe_empty(stack_t *stack, frame_t *frame, char c) {
     puts("object_maybe_empty");
+
+    if (is_ws(c)) {
+        return 1;
+    }
 
     if (c == '}') {
         // The empty object.
@@ -318,7 +349,7 @@ int object(stack_t *stack, frame_t *frame, char c) {
         replace(stack, object_maybe_empty);
         return 1;
     }
-        
+
     fail(stack);
     return 0;
 }
@@ -481,6 +512,11 @@ int value_maybe_string(stack_t *stack, frame_t *frame, char c) {
 
 int value(stack_t *stack, frame_t *frame, char c) {
     puts("value");
+
+    if (is_ws(c)) {
+        return 1;
+    }
+
     replace(stack, value_maybe_string);
     call(stack, string);
     return 0;
@@ -500,12 +536,19 @@ int jsonex_call(stack_t *stack, char c) {
         // A parse_fn_t should return truthy if the character was consumed,
         // falsy otherwise.
         frame_t *frame = &(stack->frames[stack->len - 1]);
+        size_t old_stack_len = stack->len;
         if (frame->fn(stack, frame, c)) {
             return 1;
         }
         // Keep looping until something consumes this character! (Or there's no
         // more stack.)
     }
+
+    // Eat up trailing whitespace.
+    if (is_ws(c)) {
+        return 1;
+    }
+
     return 0;
 }
 
@@ -553,6 +596,6 @@ const char *feed(char *s, size_t len) {
 }
 
 int main(void) {
-    char *json = "[1,2,true,false,null,4,{\"blah\":null}]";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
+    char *json = "  [ 1 , 2 , true , false , null , 4 , { \"blah\" : null } ] ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
     puts(feed(json, strlen(json)));
 }
