@@ -19,6 +19,11 @@ typedef struct frame {
     } status;
     union {
         struct {
+            const char *string;
+            size_t len;
+            size_t offset;
+        } literal;
+        struct {
             int negative;
             int integer_part;
             int decimal_digits;
@@ -86,6 +91,107 @@ void call(stack_t *stack, parse_fn_t fn) {
     }
 }
 
+int _literal_null(stack_t *stack, frame_t *frame, char c) {
+    if (c == frame->u.literal.string[frame->u.literal.offset]) {
+        frame->u.literal.offset++;
+        if (frame->u.literal.offset == frame->u.literal.len) {
+            close(stack);
+        }
+        return 1;
+    }
+
+    fail(stack);
+    return 0;
+}
+
+int _null(stack_t *stack, frame_t *frame, char c) {
+    frame->u.literal.string = "null";
+    frame->u.literal.len = 4;
+    frame->u.literal.offset = 0;
+
+    replace(stack, _literal_null);
+    return 0;
+}
+
+int value_maybe_null(stack_t *stack, frame_t *frame, char c) {
+    puts("value_maybe_null");
+    if (reap(stack)) {
+        close(stack);
+        return 0;
+    } else {
+        fail(stack);
+        return 0;
+    }
+}
+
+int _literal_false(stack_t *stack, frame_t *frame, char c) {
+    if (c == frame->u.literal.string[frame->u.literal.offset]) {
+        frame->u.literal.offset++;
+        if (frame->u.literal.offset == frame->u.literal.len) {
+            close(stack);
+        }
+        return 1;
+    }
+
+    fail(stack);
+    return 0;
+}
+
+int _false(stack_t *stack, frame_t *frame, char c) {
+    frame->u.literal.string = "false";
+    frame->u.literal.len = 5;
+    frame->u.literal.offset = 0;
+
+    replace(stack, _literal_false);
+    return 0;
+}
+
+int value_maybe_false(stack_t *stack, frame_t *frame, char c) {
+    puts("value_maybe_false");
+    if (reap(stack)) {
+        close(stack);
+        return 0;
+    } else {
+        replace(stack, value_maybe_null);
+        call(stack, _null);
+        return 0;
+    }
+}
+
+int _literal_true(stack_t *stack, frame_t *frame, char c) {
+    if (c == frame->u.literal.string[frame->u.literal.offset]) {
+        frame->u.literal.offset++;
+        if (frame->u.literal.offset == frame->u.literal.len) {
+            close(stack);
+        }
+        return 1;
+    }
+
+    fail(stack);
+    return 0;
+}
+
+int _true(stack_t *stack, frame_t *frame, char c) {
+    frame->u.literal.string = "true";
+    frame->u.literal.len = 4;
+    frame->u.literal.offset = 0;
+
+    replace(stack, _literal_true);
+    return 0;
+}
+
+int value_maybe_true(stack_t *stack, frame_t *frame, char c) {
+    puts("value_maybe_true");
+    if (reap(stack)) {
+        close(stack);
+        return 0;
+    } else {
+        replace(stack, value_maybe_false);
+        call(stack, _false);
+        return 0;
+    }
+}
+
 int value(stack_t *, frame_t *, char);
 
 int array_item(stack_t *stack, frame_t *frame, char c) {
@@ -140,9 +246,8 @@ int value_maybe_array(stack_t *stack, frame_t *frame, char c) {
         close(stack);
         return 0;
     } else {
-        /*replace(value_maybe_array);
-        call(stack, array);*/
-        fail(stack);
+        replace(stack, value_maybe_true);
+        call(stack, _true);
         return 0;
     }
 }
@@ -448,6 +553,6 @@ const char *feed(char *s, size_t len) {
 }
 
 int main(void) {
-    char *json = "[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
+    char *json = "[1,2,true,false,null,4,{\"blah\":null}]";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
     puts(feed(json, strlen(json)));
 }
