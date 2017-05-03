@@ -86,6 +86,92 @@ void call(stack_t *stack, parse_fn_t fn) {
     }
 }
 
+int object_key(stack_t *, frame_t *, char);
+
+int object_value(stack_t *stack, frame_t *frame, char c) {
+    puts("object_value");
+
+    if (reap(stack)) {
+        if (c == ',') {
+            replace(stack, object_key);
+            return 1;
+        } else if (c == '}') {
+            close(stack);
+            return 1;
+        }
+    }
+
+    fail(stack);
+    return 0;
+}
+
+int value(stack_t *, frame_t *, char);
+
+// todo static
+int object_colon(stack_t *stack, frame_t *frame, char c) {
+    puts("object_colon");
+
+    if (reap(stack) && c == ':') {
+        replace(stack, object_value);
+        call(stack, value);
+        return 1;
+    }
+
+    fail(stack);
+    return 0;
+}
+
+int string(stack_t *, frame_t *, char);
+
+int object_key(stack_t *stack, frame_t *frame, char c) {
+    puts("object_key");
+
+    replace(stack, object_colon);
+    call(stack, string);
+    return 0;
+}
+
+int object_maybe_empty(stack_t *stack, frame_t *frame, char c) {
+    puts("object_maybe_empty");
+
+    if (c == '}') {
+        // The empty object.
+        close(stack);
+        return 1;
+    } else if (c == '\0') {
+        fail(stack);
+        return 0;
+    } else {
+        replace(stack, object_key);
+        return 0;
+    }
+}
+
+int object(stack_t *stack, frame_t *frame, char c) {
+    puts("object");
+
+    if (c == '{') {
+        replace(stack, object_maybe_empty);
+        return 1;
+    } else if (c == '\0') {
+        fail(stack);
+        return 0;
+    }
+}
+
+int value_maybe_object(stack_t *stack, frame_t *frame, char c) {
+    puts("value_maybe_object");
+    if (reap(stack)) {
+        close(stack);
+        return 0;
+    } else {
+        /*replace(value_maybe_object);
+        call(stack, object);*/
+        fail(stack);
+        return 0;
+    }
+}
+
 int number_decimal_digits(stack_t *stack, frame_t *frame, char c) {
     puts("number_decimal_digits");
 
@@ -182,9 +268,8 @@ int value_maybe_number(stack_t *stack, frame_t *frame, char c) {
         close(stack);
         return 0;
     } else {
-        /*replace(value_maybe_object);
-        call(stack, object);*/
-        fail(stack);
+        replace(stack, value_maybe_object);
+        call(stack, object);
         return 0;
     }
 }
@@ -201,6 +286,7 @@ int string_contents(stack_t *stack, frame_t *frame, char c) {
     } else {
         return 1;
     }
+    // todo handle escaping
 }
 
 int string(stack_t *stack, frame_t *frame, char c) {
@@ -304,6 +390,6 @@ const char *feed(char *s, size_t len) {
 }
 
 int main(void) {
-    char *json = "494.123"; //"\"ass\"";
+    char *json = "{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
     puts(feed(json, strlen(json)));
 }
