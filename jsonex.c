@@ -638,9 +638,6 @@ int jsonex_call(context_t *context, char c) {
     return 0;
 }
 
-const char *jsonex_success = "success";
-const char *jsonex_fail = "fail";
-
 const char *jsonex_finish(context_t *context) {
     // All parse functions should complete() or abort() when given '\0', so
     // each time we call_context(.., '\0') there should be one less frame.
@@ -661,7 +658,7 @@ const char *jsonex_finish(context_t *context) {
         return "internal error: first frame isn't a zombie";
     }
     if (context->frames[0].is_complete) {
-        return jsonex_success;
+        return NULL;
     }
-    return jsonex_fail;
+    return "did not parse";
 }

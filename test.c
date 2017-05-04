@@ -1,41 +1,69 @@
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "jsonex.h"
 
-int bloop_value = 0;
-int blah_snarf_value = 0;
-char blah_wharrgbl_value[MAX_STRING_SIZE];
-int poop_value = 0;
-
-const char *feed(char *s, size_t len) {
+void run(char *fn, jsonex_rule_t *rules) {
     context_t context;
-    jsonex_rule_t rules[] = {
-        { .type = JSONEX_INTEGER, .p = &bloop_value, .path = (char *[]){ "blooq", NULL } },
-        { .type = JSONEX_INTEGER, .p = &blah_snarf_value, .path = (char *[]){ "blah", "snarf", NULL } },
-        { .type = JSONEX_STRING, .p = blah_wharrgbl_value, .path = (char *[]){ "blah", "wharrgbl", NULL } },
-        { .type = JSONEX_INTEGER, .p = &poop_value, .path = (char *[]){ "poop", NULL } },
-        { .type = JSONEX_NONE }
-    };
     jsonex_init(&context, rules);
 
-    for (int i = 0; i < len; i++) {
-        if (!jsonex_call(&context, s[i])) {
-            return "fail";
+    FILE *f = fopen(fn, "r");
+    if (f == NULL) {
+        perror("fopen");
+        exit(1);
+    }
+
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        if (!jsonex_call(&context, c)) {
+            printf("%s: jsonex_call() failed\n", fn);
+            exit(1);
         }
     }
 
-    const char *ret = jsonex_finish(&context);
-
-    printf("bloop_value is: %i\n", bloop_value);
-    printf("blah_snarf_value is: %i\n", blah_snarf_value);
-    printf("blah_wharrgbl_value is: %s\n", blah_wharrgbl_value);
-    printf("poop_value is: %i\n", poop_value);
-
-    return ret;
+    const char *ret;
+    if ((ret = jsonex_finish(&context)) != NULL) {
+        printf("jsonex_finish() during %s: %s\n", fn, ret);
+        exit(1);
+    }
 }
 
+#define CHECK_INTEGER(a, b) \
+    if (a != b) { \
+        printf(#a " (%i) != %i, while testing %s\n", a, b, fn); \
+        exit(1); \
+    }
+
+#define CHECK_STRING(a, b) \
+    if (strcmp(a, b)) { \
+        printf(#a " (%s) != %s, while testing %s\n", a, b, fn); \
+        exit(1); \
+    }
+
 int main(void) {
-    char *json = " { \"blooq\":42, \"blah\": {\"snarf\": 1234, \"wharrgbl\":  \"mem dog\"} , \"poop\" : 3 } ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
-    puts(feed(json, strlen(json)));
+    {
+        int bloop = 0;
+        int blah_snarf = 0;
+        char blah_wharrgbl[MAX_STRING_SIZE];
+        int pooh = 0;
+
+        jsonex_rule_t rules[] = {
+            { .type = JSONEX_INTEGER, .p = &bloop, .path = (char *[]){ "bloop", NULL } },
+            { .type = JSONEX_INTEGER, .p = &blah_snarf, .path = (char *[]){ "blah", "snarf", NULL } },
+            { .type = JSONEX_STRING, .p = blah_wharrgbl, .path = (char *[]){ "blah", "wharrgbl", NULL } },
+            { .type = JSONEX_INTEGER, .p = &pooh, .path = (char *[]){ "pooh", NULL } },
+            { .type = JSONEX_NONE }
+        };
+        char *fn = "tests/1.json";
+        run(fn, rules);
+
+        CHECK_INTEGER(bloop, 42);
+        CHECK_INTEGER(blah_snarf, 1234);
+        CHECK_STRING(blah_wharrgbl, "mem dog");
+        CHECK_INTEGER(pooh, 4);
+    }
+
+    puts("success!");
 }
