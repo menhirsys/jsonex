@@ -1,64 +1,11 @@
-#include <stdio.h>
+#if DEBUG
+    #include <stdio.h>
+#endif
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <math.h>
-#include <stddef.h>
-
-#define CONTEXT_FRAME_COUNT 16
-#define MAX_STRING_SIZE 64
-
-struct context;
-struct frame;
-
-typedef int (*parse_fn_t)(struct context *, struct frame *, char);
-
-typedef enum {
-    JSONEX_INTEGER,
-    JSONEX_STRING,
-    JSONEX_BOOL,
-    JSONEX_NONE
-} jsonex_type_t;
-
-typedef struct frame {
-    enum {
-        FREE,
-        IN_USE,
-        ZOMBIE
-    } status;
-    union {
-        struct {
-            const char *string;
-            size_t len;
-            size_t offset;
-        } literal;
-        struct {
-            int negative;
-            int integer_part;
-            int decimal_digits;
-            double decimal_part;
-        } number;
-        char string[MAX_STRING_SIZE];
-    } u;
-    parse_fn_t fn;
-    int is_complete;
-    jsonex_type_t type;
-} frame_t;
-
-typedef struct {
-    jsonex_type_t type;
-    void *p;
-    char **path;
-    int found;
-} jsonex_rule_t;
-
-typedef struct context {
-    frame_t frames[CONTEXT_FRAME_COUNT];
-    size_t frames_len;
-    char paths[CONTEXT_FRAME_COUNT][MAX_STRING_SIZE];
-    size_t paths_len;
-    jsonex_rule_t *rules;
-    const char *error;
-} context_t;
+#include "jsonex.h"
 
 void print_context(const char *, context_t *);
 
@@ -348,6 +295,13 @@ int object_value(context_t *context, frame_t *frame, char c) {
                 case JSONEX_STRING:
                     strcpy(p, reaped_frame->u.string);
                     break;
+                case JSONEX_BOOL:
+                    *((int *)p) = reaped_frame->u.boolean;
+                    break;
+                case JSONEX_NONE:
+                    context->error = "got JSONEX_NONE while reap()ing a value";
+                    fail(context);
+                    return 0;
                 }
             }
         }
@@ -380,11 +334,6 @@ int object_colon(context_t *context, frame_t *frame, char c) {
 
         // Add key to path.
         strcpy(context->paths[context->paths_len++], frame->u.string);
-        printf("path now:");
-        for (int i = 0; i < context->paths_len; i++) {
-            printf(" %s", context->paths[i]);
-        }
-        puts("");
 
         replace(context, object_value);
         call(context, value);
@@ -590,6 +539,7 @@ int value(context_t *context, frame_t *frame, char c) {
 }
 
 void print_context(const char *msg, context_t *context) {
+#if DEBUG
     printf("%s ", msg);
 
     if (context->error != NULL) {
@@ -644,6 +594,7 @@ void print_context(const char *msg, context_t *context) {
         printf(" , %s", fn_name);
     }
     putchar('\n');
+#endif
 }
 
 void jsonex_init(context_t *context, jsonex_rule_t *rules) {
@@ -667,10 +618,11 @@ int jsonex_call(context_t *context, char c) {
         // A parse_fn_t should return truthy if the character was consumed,
         // falsy otherwise.
         char s[9];
+#if DEBUG
         sprintf(s, "feed %c  ", c);
+#endif
         print_context(s, context);
         frame_t *frame = &(context->frames[context->frames_len - 1]);
-        size_t old_context_len = context->frames_len;
         if (frame->fn(context, frame, c)) {
             return 1;
         }
@@ -712,41 +664,4 @@ const char *jsonex_finish(context_t *context) {
         return jsonex_success;
     }
     return jsonex_fail;
-}
-
-int bloop_value = 0;
-int blah_snarf_value = 0;
-char blah_wharrgbl_value[MAX_STRING_SIZE];
-int poop_value = 0;
-
-const char *feed(char *s, size_t len) {
-    context_t context;
-    jsonex_rule_t rules[] = {
-        { .type = JSONEX_INTEGER, .p = &bloop_value, .path = (char *[]){ "blooq", NULL } },
-        { .type = JSONEX_INTEGER, .p = &blah_snarf_value, .path = (char *[]){ "blah", "snarf", NULL } },
-        { .type = JSONEX_STRING, .p = blah_wharrgbl_value, .path = (char *[]){ "blah", "wharrgbl", NULL } },
-        { .type = JSONEX_INTEGER, .p = &poop_value, .path = (char *[]){ "poop", NULL } },
-        { .type = JSONEX_NONE }
-    };
-    jsonex_init(&context, rules);
-
-    for (int i = 0; i < len; i++) {
-        if (!jsonex_call(&context, s[i])) {
-            return jsonex_fail;
-        }
-    }
-
-    const char *ret = jsonex_finish(&context);
-
-    printf("bloop_value is: %i\n", bloop_value);
-    printf("blah_snarf_value is: %i\n", blah_snarf_value);
-    printf("blah_wharrgbl_value is: %s\n", blah_wharrgbl_value);
-    printf("poop_value is: %i\n", poop_value);
-
-    return ret;
-}
-
-int main(void) {
-    char *json = " { \"blooq\":42, \"blah\": {\"snarf\": 1234, \"wharrgbl\":  \"mem dog\"} , \"poop\" : 3 } ";//"[1,2,{\"1\":{\"2\":3}}]";//"{\"a\":123.456,\"xyz\":\"qwerty\",\"1\":{\"2\":3}}"; //"494.123"; //"\"ass\"";
-    puts(feed(json, strlen(json)));
 }
