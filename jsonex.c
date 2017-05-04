@@ -307,8 +307,11 @@ static int object_value(context_t *context, frame_t *frame, char c) {
         }
 
         // Remove last path component.
-        // todo check 0
-        context->paths_len--;
+        if (context->paths_len > 0) {
+            context->paths_len--;
+        } else {
+            context->error = "path_lens == 0 in object_value";
+        }
 
         if (c == ',') {
             replace(context, object_key);
@@ -407,7 +410,6 @@ static int number_decimal_digits(context_t *context, frame_t *frame, char c) {
         fail(context);
         return 0;
     }
-    // todo: handle e+4
 }
 
 static int number_got_integer_part(context_t *context, frame_t *frame, char c) {
@@ -493,11 +495,14 @@ static int string_contents(context_t *context, frame_t *frame, char c) {
         return 0;
     } else {
         // Add to buffer and consume.
-        // todo if too long error somehow
-        frame->u.string[strlen(frame->u.string)] = c;
+        size_t len = strlen(frame->u.string);
+        if (len < sizeof(frame->u.string)) {
+            frame->u.string[strlen(frame->u.string)] = c;
+        } else {
+            context->error = "string too long in string_contents";
+        }
         return 1;
     }
-    // todo handle escaping
 }
 
 static int string(context_t *context, frame_t *frame, char c) {
