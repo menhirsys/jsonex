@@ -7,9 +7,9 @@
 
 #include "jsonex.h"
 
-void print_context(const char *, context_t *);
+static void print_context(const char *, context_t *);
 
-int reap(context_t *context, frame_t *frame_keep_type_and_value) {
+static int reap(context_t *context, frame_t *frame_keep_type_and_value) {
     print_context("reap    ", context);
     if (context->frames_len == CONTEXT_FRAME_COUNT) {
         context->error = "context full in reap()";
@@ -29,9 +29,9 @@ int reap(context_t *context, frame_t *frame_keep_type_and_value) {
     }
 }
 
-void close(context_t *context) {
+static void close(context_t *context) {
     if (context->frames_len == 0) {
-        context->error = "context empty in close()"; // todo report error somehow. also init to NULL. also don't clobber
+        context->error = "context empty in close()";
     } else {
         frame_t *frame = &(context->frames[context->frames_len - 1]);
         if (frame->status != IN_USE) {
@@ -45,7 +45,7 @@ void close(context_t *context) {
     print_context("close   ", context);
 }
 
-void fail(context_t *context) {
+static void fail(context_t *context) {
     if (context->frames_len == 0) {
         context->error = "context empty in fail()";
     } else {
@@ -61,12 +61,12 @@ void fail(context_t *context) {
     print_context("fail    ", context);
 }
 
-void replace(context_t *context, parse_fn_t fn) {
+static void replace(context_t *context, parse_fn_t fn) {
     context->frames[context->frames_len - 1].fn = fn;
     print_context("replace ", context);
 }
 
-void call(context_t *context, parse_fn_t fn) {
+static void call(context_t *context, parse_fn_t fn) {
     if (context->frames_len == CONTEXT_FRAME_COUNT) {
         context->error = "context full in call()";
     } else {
@@ -83,7 +83,7 @@ void call(context_t *context, parse_fn_t fn) {
     print_context("call    ", context);
 }
 
-int is_ws(char c) {
+static int is_ws(char c) {
     switch (c) {
     case ' ':
     case '\n':
@@ -94,7 +94,7 @@ int is_ws(char c) {
     return 0;
 }
 
-int _literal_null(context_t *context, frame_t *frame, char c) {
+static int _literal_null(context_t *context, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
@@ -107,7 +107,7 @@ int _literal_null(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int _null(context_t *context, frame_t *frame, char c) {
+static int _null(context_t *context, frame_t *frame, char c) {
     frame->u.literal.string = "null";
     frame->u.literal.len = 4;
     frame->u.literal.offset = 0;
@@ -117,7 +117,7 @@ int _null(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int value_maybe_null(context_t *context, frame_t *frame, char c) {
+static int value_maybe_null(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -127,7 +127,7 @@ int value_maybe_null(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int _literal_false(context_t *context, frame_t *frame, char c) {
+static int _literal_false(context_t *context, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
@@ -140,7 +140,7 @@ int _literal_false(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int _false(context_t *context, frame_t *frame, char c) {
+static int _false(context_t *context, frame_t *frame, char c) {
     frame->u.literal.string = "false";
     frame->u.literal.len = 5;
     frame->u.literal.offset = 0;
@@ -150,7 +150,7 @@ int _false(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int value_maybe_false(context_t *context, frame_t *frame, char c) {
+static int value_maybe_false(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -161,7 +161,7 @@ int value_maybe_false(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int _literal_true(context_t *context, frame_t *frame, char c) {
+static int _literal_true(context_t *context, frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
@@ -174,7 +174,7 @@ int _literal_true(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int _true(context_t *context, frame_t *frame, char c) {
+static int _true(context_t *context, frame_t *frame, char c) {
     frame->u.literal.string = "true";
     frame->u.literal.len = 4;
     frame->u.literal.offset = 0;
@@ -184,7 +184,7 @@ int _true(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int value_maybe_true(context_t *context, frame_t *frame, char c) {
+static int value_maybe_true(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -195,9 +195,9 @@ int value_maybe_true(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int value(context_t *, frame_t *, char);
+static int value(context_t *, frame_t *, char);
 
-int array_item(context_t *context, frame_t *frame, char c) {
+static int array_item(context_t *context, frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -216,7 +216,7 @@ int array_item(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int array_maybe_empty(context_t *context, frame_t *frame, char c) {
+static int array_maybe_empty(context_t *context, frame_t *frame, char c) {
     if (c == ']') {
         // The empty array.
         close(context);
@@ -231,7 +231,7 @@ int array_maybe_empty(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int array(context_t *context, frame_t *frame, char c) {
+static int array(context_t *context, frame_t *frame, char c) {
     if (c == '[') {
         replace(context, array_maybe_empty);
         return 1;
@@ -241,7 +241,7 @@ int array(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int value_maybe_array(context_t *context, frame_t *frame, char c) {
+static int value_maybe_array(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -252,9 +252,9 @@ int value_maybe_array(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int object_key(context_t *, frame_t *, char);
+static int object_key(context_t *, frame_t *, char);
 
-void *match_rule(context_t *context, jsonex_type_t type) {
+static void *match_rule(context_t *context, jsonex_type_t type) {
     for (jsonex_rule_t *p = context->rules; p->type != JSONEX_NONE; p++) {
         if (p->type != type) {
             continue;
@@ -278,7 +278,7 @@ void *match_rule(context_t *context, jsonex_type_t type) {
     return NULL;
 }
 
-int object_value(context_t *context, frame_t *frame, char c) {
+static int object_value(context_t *context, frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -323,8 +323,7 @@ int object_value(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-// todo static
-int object_colon(context_t *context, frame_t *frame, char c) {
+static int object_colon(context_t *context, frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -344,9 +343,9 @@ int object_colon(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int string(context_t *, frame_t *, char);
+static int string(context_t *, frame_t *, char);
 
-int object_key(context_t *context, frame_t *frame, char c) {
+static int object_key(context_t *context, frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -356,7 +355,7 @@ int object_key(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int object_maybe_empty(context_t *context, frame_t *frame, char c) {
+static int object_maybe_empty(context_t *context, frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -374,7 +373,7 @@ int object_maybe_empty(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int object(context_t *context, frame_t *frame, char c) {
+static int object(context_t *context, frame_t *frame, char c) {
     if (c == '{') {
         replace(context, object_maybe_empty);
         return 1;
@@ -384,7 +383,7 @@ int object(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-int value_maybe_object(context_t *context, frame_t *frame, char c) {
+static int value_maybe_object(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -395,7 +394,7 @@ int value_maybe_object(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int number_decimal_digits(context_t *context, frame_t *frame, char c) {
+static int number_decimal_digits(context_t *context, frame_t *frame, char c) {
     if (c >= '0' && c <= '9') {
         frame->u.number.decimal_digits++;
         frame->u.number.decimal_part += (c - '0') / pow(10, frame->u.number.decimal_digits);
@@ -411,7 +410,7 @@ int number_decimal_digits(context_t *context, frame_t *frame, char c) {
     // todo: handle e+4
 }
 
-int number_got_integer_part(context_t *context, frame_t *frame, char c) {
+static int number_got_integer_part(context_t *context, frame_t *frame, char c) {
     if (c == '.') {
         replace(context, number_decimal_digits);
         return 1;
@@ -422,7 +421,7 @@ int number_got_integer_part(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int number_got_nonzero_integer_part(context_t *context, frame_t *frame, char c) {
+static int number_got_nonzero_integer_part(context_t *context, frame_t *frame, char c) {
     if (c >= '0' && c <= '9') {
         frame->u.number.integer_part *= 10;
         frame->u.number.integer_part += c - '0';
@@ -438,7 +437,7 @@ int number_got_nonzero_integer_part(context_t *context, frame_t *frame, char c) 
     }
 }
 
-int number_got_sign(context_t *context, frame_t *frame, char c) {
+static int number_got_sign(context_t *context, frame_t *frame, char c) {
     if (c == '0') {
         replace(context, number_got_integer_part);
         return 1;
@@ -453,7 +452,7 @@ int number_got_sign(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int number(context_t *context, frame_t *frame, char c) {
+static int number(context_t *context, frame_t *frame, char c) {
     frame->u.number.negative = 0;
     frame->u.number.integer_part = 0;
     frame->u.number.decimal_digits = 0;
@@ -474,7 +473,7 @@ int number(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int value_maybe_number(context_t *context, frame_t *frame, char c) {
+static int value_maybe_number(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -485,7 +484,7 @@ int value_maybe_number(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int string_contents(context_t *context, frame_t *frame, char c) {
+static int string_contents(context_t *context, frame_t *frame, char c) {
     if (c == '"') {
         close(context);
         return 1;
@@ -501,7 +500,7 @@ int string_contents(context_t *context, frame_t *frame, char c) {
     // todo handle escaping
 }
 
-int string(context_t *context, frame_t *frame, char c) {
+static int string(context_t *context, frame_t *frame, char c) {
     memset(frame->u.string, '\0', sizeof(frame->u.string));
     frame->type = JSONEX_STRING;
 
@@ -517,7 +516,7 @@ int string(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int value_maybe_string(context_t *context, frame_t *frame, char c) {
+static int value_maybe_string(context_t *context, frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -528,7 +527,7 @@ int value_maybe_string(context_t *context, frame_t *frame, char c) {
     }
 }
 
-int value(context_t *context, frame_t *frame, char c) {
+static int value(context_t *context, frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -538,7 +537,7 @@ int value(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-void print_context(const char *msg, context_t *context) {
+static void print_context(const char *msg, context_t *context) {
 #if DEBUG
     printf("%s ", msg);
 
