@@ -9,15 +9,15 @@
 
 int missing, found;
 
-static void print_context(const char *, context_t *);
+static void print_context(const char *, jsonex_context_t *);
 
-static int reap(context_t *context, frame_t *frame_keep_type_and_value) {
+static int reap(jsonex_context_t *context, jsonex_frame_t *frame_keep_type_and_value) {
     print_context("reap    ", context);
-    if (context->frames_len == CONTEXT_FRAME_COUNT) {
+    if (context->frames_len == JSONEX_CONTEXT_FRAME_COUNT) {
         context->error = "context full in reap()";
         return 0;
     }
-    frame_t *frame = &(context->frames[context->frames_len]);
+    jsonex_frame_t *frame = &(context->frames[context->frames_len]);
     if (frame->status != ZOMBIE) {
         context->error = "frame isn't a zombie";
         return 0;
@@ -31,11 +31,11 @@ static int reap(context_t *context, frame_t *frame_keep_type_and_value) {
     }
 }
 
-static void close(context_t *context) {
+static void close(jsonex_context_t *context) {
     if (context->frames_len == 0) {
         context->error = "context empty in close()";
     } else {
-        frame_t *frame = &(context->frames[context->frames_len - 1]);
+        jsonex_frame_t *frame = &(context->frames[context->frames_len - 1]);
         if (frame->status != IN_USE) {
             context->error = "frame isn't in use";
         } else {
@@ -47,11 +47,11 @@ static void close(context_t *context) {
     print_context("close   ", context);
 }
 
-static void fail(context_t *context) {
+static void fail(jsonex_context_t *context) {
     if (context->frames_len == 0) {
         context->error = "context empty in fail()";
     } else {
-        frame_t *frame = &(context->frames[context->frames_len - 1]);
+        jsonex_frame_t *frame = &(context->frames[context->frames_len - 1]);
         if (frame->status != IN_USE) {
             context->error = "frame isn't in use";
         } else {
@@ -63,16 +63,16 @@ static void fail(context_t *context) {
     print_context("fail    ", context);
 }
 
-static void replace(context_t *context, parse_fn_t fn) {
+static void replace(jsonex_context_t *context, parse_fn_t fn) {
     context->frames[context->frames_len - 1].fn = fn;
     print_context("replace ", context);
 }
 
-static void call(context_t *context, parse_fn_t fn) {
-    if (context->frames_len == CONTEXT_FRAME_COUNT) {
+static void call(jsonex_context_t *context, parse_fn_t fn) {
+    if (context->frames_len == JSONEX_CONTEXT_FRAME_COUNT) {
         context->error = "context full in call()";
     } else {
-        frame_t *frame = &(context->frames[context->frames_len]);
+        jsonex_frame_t *frame = &(context->frames[context->frames_len]);
         if (frame->status == FREE) {
             frame->status = IN_USE;
             frame->fn = fn;
@@ -96,7 +96,7 @@ static int is_ws(char c) {
     return 0;
 }
 
-static int _literal_null(context_t *context, frame_t *frame, char c) {
+static int _literal_null(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
@@ -109,7 +109,7 @@ static int _literal_null(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int _null(context_t *context, frame_t *frame, char c) {
+static int _null(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     frame->u.literal.string = "null";
     frame->u.literal.len = 4;
     frame->u.literal.offset = 0;
@@ -119,7 +119,7 @@ static int _null(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int value_maybe_null(context_t *context, frame_t *frame, char c) {
+static int value_maybe_null(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -129,7 +129,7 @@ static int value_maybe_null(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int _literal_false(context_t *context, frame_t *frame, char c) {
+static int _literal_false(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
@@ -142,7 +142,7 @@ static int _literal_false(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int _false(context_t *context, frame_t *frame, char c) {
+static int _false(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     frame->u.literal.string = "false";
     frame->u.literal.len = 5;
     frame->u.literal.offset = 0;
@@ -152,7 +152,7 @@ static int _false(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int value_maybe_false(context_t *context, frame_t *frame, char c) {
+static int value_maybe_false(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -163,7 +163,7 @@ static int value_maybe_false(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int _literal_true(context_t *context, frame_t *frame, char c) {
+static int _literal_true(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == frame->u.literal.string[frame->u.literal.offset]) {
         frame->u.literal.offset++;
         if (frame->u.literal.offset == frame->u.literal.len) {
@@ -176,7 +176,7 @@ static int _literal_true(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int _true(context_t *context, frame_t *frame, char c) {
+static int _true(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     frame->u.literal.string = "true";
     frame->u.literal.len = 4;
     frame->u.literal.offset = 0;
@@ -186,7 +186,7 @@ static int _true(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int value_maybe_true(context_t *context, frame_t *frame, char c) {
+static int value_maybe_true(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -197,9 +197,9 @@ static int value_maybe_true(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int value(context_t *, frame_t *, char);
+static int value(jsonex_context_t *, jsonex_frame_t *, char);
 
-static int array_item(context_t *context, frame_t *frame, char c) {
+static int array_item(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -218,7 +218,7 @@ static int array_item(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int array_maybe_empty(context_t *context, frame_t *frame, char c) {
+static int array_maybe_empty(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == ']') {
         // The empty array.
         close(context);
@@ -233,7 +233,7 @@ static int array_maybe_empty(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int array(context_t *context, frame_t *frame, char c) {
+static int array(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == '[') {
         replace(context, array_maybe_empty);
         return 1;
@@ -243,7 +243,7 @@ static int array(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int value_maybe_array(context_t *context, frame_t *frame, char c) {
+static int value_maybe_array(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -254,9 +254,9 @@ static int value_maybe_array(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int object_key(context_t *, frame_t *, char);
+static int object_key(jsonex_context_t *, jsonex_frame_t *, char);
 
-static void *match_rule(context_t *context, jsonex_type_t type) {
+static void *match_rule(jsonex_context_t *context, jsonex_type_t type) {
     for (jsonex_rule_t *p = context->rules; p->type != JSONEX_NONE; p++) {
         if (p->type != type) {
             continue;
@@ -284,13 +284,13 @@ static void *match_rule(context_t *context, jsonex_type_t type) {
     return NULL;
 }
 
-static int object_value(context_t *context, frame_t *frame, char c) {
+static int object_value(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
 
     if (reap(context, NULL)) {
-        frame_t *reaped_frame = &(context->frames[context->frames_len]);
+        jsonex_frame_t *reaped_frame = &(context->frames[context->frames_len]);
         if (reaped_frame->type != JSONEX_NONE) {
             void *p;
             if ((p = match_rule(context, reaped_frame->type)) != NULL) {
@@ -332,13 +332,13 @@ static int object_value(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int object_colon(context_t *context, frame_t *frame, char c) {
+static int object_colon(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
 
     if (reap(context, NULL) && c == ':') {
-        frame_t *frame = &(context->frames[context->frames_len]);
+        jsonex_frame_t *frame = &(context->frames[context->frames_len]);
 
         // Add key to path.
         strcpy(context->paths[context->paths_len++], frame->u.string);
@@ -352,9 +352,9 @@ static int object_colon(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int string(context_t *, frame_t *, char);
+static int string(jsonex_context_t *, jsonex_frame_t *, char);
 
-static int object_key(context_t *context, frame_t *frame, char c) {
+static int object_key(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -364,7 +364,7 @@ static int object_key(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int object_maybe_empty(context_t *context, frame_t *frame, char c) {
+static int object_maybe_empty(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -382,7 +382,7 @@ static int object_maybe_empty(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int object(context_t *context, frame_t *frame, char c) {
+static int object(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == '{') {
         replace(context, object_maybe_empty);
         return 1;
@@ -392,7 +392,7 @@ static int object(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static int value_maybe_object(context_t *context, frame_t *frame, char c) {
+static int value_maybe_object(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -403,7 +403,7 @@ static int value_maybe_object(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int number_decimal_digits(context_t *context, frame_t *frame, char c) {
+static int number_decimal_digits(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c >= '0' && c <= '9') {
         frame->u.number.decimal_digits++;
         frame->u.number.decimal_part += (c - '0') / pow(10, frame->u.number.decimal_digits);
@@ -418,7 +418,7 @@ static int number_decimal_digits(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int number_got_integer_part(context_t *context, frame_t *frame, char c) {
+static int number_got_integer_part(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == '.') {
         replace(context, number_decimal_digits);
         return 1;
@@ -429,7 +429,7 @@ static int number_got_integer_part(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int number_got_nonzero_integer_part(context_t *context, frame_t *frame, char c) {
+static int number_got_nonzero_integer_part(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c >= '0' && c <= '9') {
         frame->u.number.integer_part *= 10;
         frame->u.number.integer_part += c - '0';
@@ -445,7 +445,7 @@ static int number_got_nonzero_integer_part(context_t *context, frame_t *frame, c
     }
 }
 
-static int number_got_sign(context_t *context, frame_t *frame, char c) {
+static int number_got_sign(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == '0') {
         replace(context, number_got_integer_part);
         return 1;
@@ -460,7 +460,7 @@ static int number_got_sign(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int number(context_t *context, frame_t *frame, char c) {
+static int number(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     frame->u.number.negative = 0;
     frame->u.number.integer_part = 0;
     frame->u.number.decimal_digits = 0;
@@ -481,7 +481,7 @@ static int number(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int value_maybe_number(context_t *context, frame_t *frame, char c) {
+static int value_maybe_number(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -492,7 +492,7 @@ static int value_maybe_number(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int string_contents(context_t *context, frame_t *frame, char c) {
+static int string_contents(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (c == '"') {
         close(context);
         return 1;
@@ -511,7 +511,7 @@ static int string_contents(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int string(context_t *context, frame_t *frame, char c) {
+static int string(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     memset(frame->u.string, '\0', sizeof(frame->u.string));
     frame->type = JSONEX_STRING;
 
@@ -527,7 +527,7 @@ static int string(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int value_maybe_string(context_t *context, frame_t *frame, char c) {
+static int value_maybe_string(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (reap(context, frame)) {
         close(context);
         return 0;
@@ -538,7 +538,7 @@ static int value_maybe_string(context_t *context, frame_t *frame, char c) {
     }
 }
 
-static int value(context_t *context, frame_t *frame, char c) {
+static int value(jsonex_context_t *context, jsonex_frame_t *frame, char c) {
     if (is_ws(c)) {
         return 1;
     }
@@ -548,7 +548,7 @@ static int value(context_t *context, frame_t *frame, char c) {
     return 0;
 }
 
-static void print_context(const char *msg, context_t *context) {
+static void print_context(const char *msg, jsonex_context_t *context) {
 #if DEBUG
     printf("%s ", msg);
 
@@ -558,7 +558,7 @@ static void print_context(const char *msg, context_t *context) {
     }
 
     for (int i = 0; i < context->frames_len; i++) {
-        frame_t *frame = &(context->frames[i]);
+        jsonex_frame_t *frame = &(context->frames[i]);
 
         if (frame->status != IN_USE) {
             puts("error! frame->status != IN_USE!");
@@ -607,11 +607,11 @@ static void print_context(const char *msg, context_t *context) {
 #endif
 }
 
-void jsonex_init(context_t *context, jsonex_rule_t *rules) {
+void jsonex_init(jsonex_context_t *context, jsonex_rule_t *rules) {
     context->frames[0].status = IN_USE;
     context->frames[0].fn = value;
     context->frames[0].type = JSONEX_NONE;
-    for (int i = 1; i < CONTEXT_FRAME_COUNT; i++) {
+    for (int i = 1; i < JSONEX_CONTEXT_FRAME_COUNT; i++) {
         context->frames[i].status = FREE;
     }
     context->frames_len = 1;
@@ -627,7 +627,7 @@ void jsonex_init(context_t *context, jsonex_rule_t *rules) {
     context->error = NULL;
 }
 
-int jsonex_call(context_t *context, char c) {
+int jsonex_call(jsonex_context_t *context, char c) {
     while (context->frames_len > 0) {
         // A parse_fn_t should return truthy if the character was consumed,
         // falsy otherwise.
@@ -636,7 +636,7 @@ int jsonex_call(context_t *context, char c) {
         sprintf(s, "feed %c  ", c);
 #endif
         print_context(s, context);
-        frame_t *frame = &(context->frames[context->frames_len - 1]);
+        jsonex_frame_t *frame = &(context->frames[context->frames_len - 1]);
         if (frame->fn(context, frame, c)) {
             return 1;
         }
@@ -652,7 +652,7 @@ int jsonex_call(context_t *context, char c) {
     return 0;
 }
 
-const char *jsonex_finish(context_t *context) {
+const char *jsonex_finish(jsonex_context_t *context) {
     // All parse functions should complete() or abort() when given '\0', so
     // each time we call_context(.., '\0') there should be one less frame.
     while (context->frames_len > 0) {

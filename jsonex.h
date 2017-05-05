@@ -1,8 +1,10 @@
 #ifndef __JSONEX_H__
 #define __JSONEX_H__
 
-#define CONTEXT_FRAME_COUNT 16
-#define MAX_STRING_SIZE 64
+#include <stddef.h>
+
+#define JSONEX_MAX_STRING_SIZE 64
+#define JSONEX_CONTEXT_FRAME_COUNT 16
 
 typedef enum {
     JSONEX_INTEGER,
@@ -18,12 +20,12 @@ typedef struct {
     int *found;
 } jsonex_rule_t;
 
-struct context;
-struct frame;
+struct jsonex_context;
+struct jsonex_frame;
 
-typedef int (*parse_fn_t)(struct context *, struct frame *, char);
+typedef int (*parse_fn_t)(struct jsonex_context *, struct jsonex_frame *, char);
 
-typedef struct frame {
+typedef struct jsonex_frame {
     enum {
         FREE,
         IN_USE,
@@ -41,25 +43,25 @@ typedef struct frame {
             int decimal_digits;
             double decimal_part;
         } number;
-        char string[MAX_STRING_SIZE];
+        char string[JSONEX_MAX_STRING_SIZE];
         int boolean;
     } u;
     parse_fn_t fn;
     int is_complete;
     jsonex_type_t type;
-} frame_t;
+} jsonex_frame_t;
 
-typedef struct context {
-    frame_t frames[CONTEXT_FRAME_COUNT];
+typedef struct jsonex_context {
+    jsonex_frame_t frames[JSONEX_CONTEXT_FRAME_COUNT];
     size_t frames_len;
-    char paths[CONTEXT_FRAME_COUNT][MAX_STRING_SIZE];
+    char paths[JSONEX_CONTEXT_FRAME_COUNT][JSONEX_MAX_STRING_SIZE];
     size_t paths_len;
     jsonex_rule_t *rules;
     const char *error;
-} context_t;
+} jsonex_context_t;
 
-void jsonex_init(struct context *, jsonex_rule_t *);
-int jsonex_call(struct context *, char);
-const char *jsonex_finish(struct context *);
+void jsonex_init(jsonex_context_t *, jsonex_rule_t *);
+int jsonex_call(jsonex_context_t *, char);
+const char *jsonex_finish(jsonex_context_t *);
 
 #endif

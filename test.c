@@ -6,7 +6,7 @@
 #include "jsonex.h"
 
 void run(char *fn, jsonex_rule_t *rules) {
-    context_t context;
+    jsonex_context_t context;
     jsonex_init(&context, rules);
 
     FILE *f = fopen(fn, "r");
@@ -46,7 +46,7 @@ int main(void) {
     {
         int bloop = 0;
         int blah_snarf = 0;
-        char blah_wharrgbl[MAX_STRING_SIZE];
+        char blah_wharrgbl[JSONEX_MAX_STRING_SIZE];
         int pooh = 0;
 
         jsonex_rule_t rules[] = {
