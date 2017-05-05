@@ -7,6 +7,8 @@
 
 #include "jsonex.h"
 
+int missing, found;
+
 static void print_context(const char *, context_t *);
 
 static int reap(context_t *context, frame_t *frame_keep_type_and_value) {
@@ -271,7 +273,11 @@ static void *match_rule(context_t *context, jsonex_type_t type) {
             }
         }
         if (match) {
-            p->found = 1;
+            if (p->found == &missing) {
+                p->found = &found;
+            } else if (p->found != &found) {
+                *(p->found) = 1;
+            }
             return p->p;
         }
     }
@@ -611,7 +617,11 @@ void jsonex_init(context_t *context, jsonex_rule_t *rules) {
     context->frames_len = 1;
     context->paths_len = 0;
     for (jsonex_rule_t *p = rules; p->type != JSONEX_NONE; p++) {
-        p->found = 0;
+        if (p->found == NULL || p->found == &found) {
+            p->found = &missing;
+        } else {
+            *(p->found) = 0;
+        }
     }
     context->rules = rules;
     context->error = NULL;
@@ -655,6 +665,16 @@ const char *jsonex_finish(context_t *context) {
         }
     }
 
+    // Check all rules - if there was any required one that was no found, then
+    // that's an error.
+    const char *rule_fail = NULL;
+    for (jsonex_rule_t *p = context->rules; p->type != JSONEX_NONE; p++) {
+        if (p->found == &missing) {
+            rule_fail = "required rule did not match";
+            break;
+        }
+    }
+
     // Since init_context() put something on the context, and there was nothing
     // left to reap() it, we ought to have a zombie left over telling us
     // whether the parse succeeded or failed.
@@ -662,7 +682,7 @@ const char *jsonex_finish(context_t *context) {
         return "internal error: first frame isn't a zombie";
     }
     if (context->frames[0].is_complete) {
-        return NULL;
+        return rule_fail;
     }
     return "did not parse";
 }

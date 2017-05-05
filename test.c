@@ -50,10 +50,30 @@ int main(void) {
         int pooh = 0;
 
         jsonex_rule_t rules[] = {
-            { .type = JSONEX_INTEGER, .p = &bloop, .path = (char *[]){ "bloop", NULL } },
-            { .type = JSONEX_INTEGER, .p = &blah_snarf, .path = (char *[]){ "blah", "snarf", NULL } },
-            { .type = JSONEX_STRING, .p = blah_wharrgbl, .path = (char *[]){ "blah", "wharrgbl", NULL } },
-            { .type = JSONEX_INTEGER, .p = &pooh, .path = (char *[]){ "pooh", NULL } },
+            {
+                .type = JSONEX_INTEGER,
+                .p = &bloop,
+                .found = NULL,
+                .path = (char *[]){ "bloop", NULL }
+            },
+            {
+                .type = JSONEX_INTEGER,
+                .p = &blah_snarf,
+                .found = NULL,
+                .path = (char *[]){ "blah", "snarf", NULL }
+            },
+            {
+                .type = JSONEX_STRING,
+                .p = blah_wharrgbl,
+                .found = NULL,
+                .path = (char *[]){ "blah", "wharrgbl", NULL }
+            },
+            {
+                .type = JSONEX_INTEGER,
+                .p = &pooh,
+                .found = NULL,
+                .path = (char *[]){ "pooh", NULL }
+            },
             { .type = JSONEX_NONE }
         };
         char *fn = "tests/1.json";

@@ -15,7 +15,7 @@ typedef struct {
     jsonex_type_t type;
     void *p;
     char **path;
-    int found;
+    int *found;
 } jsonex_rule_t;
 
 struct context;
